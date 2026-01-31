@@ -71,25 +71,25 @@ print("\nClassification Report:\n", classification_rep_log)
 
 
 
-# import xgboost as xgb
+import xgboost as xgb
 
-# # Initialize the XGBoost model
-# xgb_model = xgb.XGBClassifier(random_state=23)
+# Initialize the XGBoost model
+xgb_model = xgb.XGBClassifier(random_state=23)
 
-# # Train the model on the training data
-# xgb_model.fit(X_train_scaled, y_train)
+# Train the model on the training data
+xgb_model.fit(X_train_scaled, y_train)
 
-# # Make predictions on the testing data
-# y_pred_xgb = xgb_model.predict(X_test_scaled)
+# Make predictions on the testing data
+y_pred_xgb = xgb_model.predict(X_test_scaled)
 
-# # Evaluate the model
-# conf_matrix_xgb = confusion_matrix(y_test, y_pred_xgb)
-# classification_rep_xgb = classification_report(y_test, y_pred_xgb)
+# Evaluate the model
+conf_matrix_xgb = confusion_matrix(y_test, y_pred_xgb)
+classification_rep_xgb = classification_report(y_test, y_pred_xgb)
 
-# # Display the evaluation metrics for XGBoost
-# print("\nXGBoost:")
-# print("\nConfusion Matrix:\n", conf_matrix_xgb)
-# print("\nClassification Report:\n", classification_rep_xgb)
+# Display the evaluation metrics for XGBoost
+print("\nXGBoost:")
+print("\nConfusion Matrix:\n", conf_matrix_xgb)
+print("\nClassification Report:\n", classification_rep_xgb)
 
 
      
