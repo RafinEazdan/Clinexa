@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import joblib
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
@@ -11,6 +12,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 
+
+from preprocess import X_train_scaled, X_test_scaled, y_train, y_test
 
 
 
@@ -66,3 +69,7 @@ print("\nConfusion Matrix:\n", conf_matrix_dt)
 print("\nClassification Report:\n", classification_rep_dt)
 
      
+# Save the models
+joblib.dump(logreg, 'logistic_regression_model.pkl')
+joblib.dump(rf_model, 'random_forest_model.pkl')
+joblib.dump(dt_model, 'decision_tree_model.pkl')
