@@ -13,8 +13,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 
 
-from preprocess import X_train_scaled, X_test_scaled, y_train, y_test
+from preprocess import pre_precessing_dengue as ppd
+df = pd.read_csv("/Users/eazdanmostafarafin/All Work/Clinexa/Dataset/CBC Report.csv")
 
+X_train_scaled, X_test_scaled, X_cv_scaled, y_train, y_test, y_cv = ppd(df)
 
 
 # Logistic Regression Model
@@ -70,6 +72,6 @@ print("\nClassification Report:\n", classification_rep_dt)
 
      
 # Save the models
-joblib.dump(logreg, 'logistic_regression_model.pkl')
-joblib.dump(rf_model, 'random_forest_model.pkl')
-joblib.dump(dt_model, 'decision_tree_model.pkl')
+joblib.dump(logreg, './artifacts/logistic_regression_model.pkl')
+joblib.dump(rf_model, './artifacts/random_forest_model.pkl')
+joblib.dump(dt_model, './artifacts/decision_tree_model.pkl')
