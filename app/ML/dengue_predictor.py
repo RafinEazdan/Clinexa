@@ -38,7 +38,7 @@ data = pd.get_dummies(data, columns=['Gender'], drop_first=True)
 X = data.drop(['Result'], axis=1)
 y = data['Result']
 
-X_train, temp_X, y_train, temp_y = train_test_split(X, y, test_size=0.3, random_state=23, stratify=y)
+X_train, temp_X, y_train, temp_y = train_test_split(X, y, test_size=0.1, random_state=23, stratify=y)
 X_test, X_cv, y_test, y_cv = train_test_split(temp_X, temp_y, test_size=0.5, random_state=23, stratify=temp_y)
 
 # Feature Scaling
@@ -71,25 +71,39 @@ print("\nClassification Report:\n", classification_rep_log)
 
 
 
-import xgboost as xgb
+# Random Forest Classifier Model
 
-# Initialize the XGBoost model
-xgb_model = xgb.XGBClassifier(random_state=23)
+from sklearn.ensemble import RandomForestClassifier
 
-# Train the model on the training data
-xgb_model.fit(X_train_scaled, y_train)
+rf_model = RandomForestClassifier(random_state=23)
+rf_model.fit(X_train_scaled, y_train)
 
-# Make predictions on the testing data
-y_pred_xgb = xgb_model.predict(X_test_scaled)
+y_pred_rf = rf_model.predict(X_test_scaled)
 
-# Evaluate the model
-conf_matrix_xgb = confusion_matrix(y_test, y_pred_xgb)
-classification_rep_xgb = classification_report(y_test, y_pred_xgb)
+conf_matrix_rf = confusion_matrix(y_test, y_pred_rf)
+classification_rep_rf = classification_report(y_test, y_pred_rf)
 
-# Display the evaluation metrics for XGBoost
-print("\nXGBoost:")
-print("\nConfusion Matrix:\n", conf_matrix_xgb)
-print("\nClassification Report:\n", classification_rep_xgb)
+print("\nConfusion Matrix:\n", conf_matrix_rf)
+print("\nClassification Report:\n", classification_rep_rf)
 
+     
+
+
+
+     
+# Decision Tree Classifier Model
+
+from sklearn.tree import DecisionTreeClassifier
+
+dt_model = DecisionTreeClassifier(random_state=23)
+dt_model.fit(X_train_scaled, y_train)
+
+y_pred_dt = dt_model.predict(X_test_scaled)
+
+conf_matrix_dt = confusion_matrix(y_test, y_pred_dt)
+classification_rep_dt = classification_report(y_test, y_pred_dt)
+
+print("\nConfusion Matrix:\n", conf_matrix_dt)
+print("\nClassification Report:\n", classification_rep_dt)
 
      
