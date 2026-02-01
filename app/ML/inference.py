@@ -15,7 +15,7 @@ def predict_dengue(input_data, model_type='random_forest'):
     Returns:
     int: Predicted class label (0 or 1).
     """
-    
+
     if model_type == 'random_forest':
         model = random_forest_model
     elif model_type == 'logistic_regression':
@@ -28,7 +28,7 @@ def predict_dengue(input_data, model_type='random_forest'):
     prediction = model.predict(input_data)
     return prediction[0]
 
-input_data_example = [[40,11.2,32,11.3,65,23,10,2,0,4.04,30,0]]  # Example input data
+input_data_example = [[65,11,60,21.9,82,15,3,0,0,3.77,285,0]]  # Example input data
 
 predict = predict_dengue(input_data_example, model_type='decision_tree')
-print(f"Predicted Dengue Infection (Random Forest): {predict}")
+print(f"Predicted Dengue Infection (Decision Tree): {predict}")
