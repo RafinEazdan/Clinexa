@@ -13,3 +13,4 @@ downloads/
 eggs/
 .eggs/
 .env
+.DS_Store
