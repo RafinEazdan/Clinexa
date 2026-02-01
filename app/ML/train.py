@@ -5,11 +5,12 @@ Trains all models and saves them in safetensors format
 
 import argparse
 import numpy as np
+import torch
 from preprocessing import DenguePreprocessor, prepare_train_test_split
 from ensemble_model import DengueEnsembleModel
 
 
-def train_models(data_path, model_dir='models', test_size=0.2, cv_size=0.1, use_pytorch_mlp=True):
+def train_models(data_path, model_dir='models', test_size=0.2, cv_size=0.1, use_pytorch_mlp=True, device='auto'):
     """
     Complete training pipeline
     
@@ -24,6 +25,18 @@ def train_models(data_path, model_dir='models', test_size=0.2, cv_size=0.1, use_
     print("DENGUE PREDICTION MODEL TRAINING")
     print("="*60)
     
+    # Show GPU info
+    print(f"\nCUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU Device: {torch.cuda.get_device_name(0)}")
+        print(f"CUDA Version: {torch.version.cuda}")
+    
+    if device == 'auto':
+        selected_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    else:
+        selected_device = device
+    print(f"Training Device: {selected_device.upper()}")
+    
     # Step 1: Load and preprocess data
     print("\n[1/4] Loading and preprocessing data...")
     preprocessor = DenguePreprocessor()
@@ -34,7 +47,7 @@ def train_models(data_path, model_dir='models', test_size=0.2, cv_size=0.1, use_
     print(f"Preprocessed data shape: {X_scaled.shape}")
     print(f"Target distribution:\n{y.value_counts()}")
     
-    # Step 2: Split data
+    # Step 2: Split data, device=device
     print(f"\n[2/4] Splitting data (test={test_size}, cv={cv_size})...")
     X_train, X_test, X_cv, y_train, y_test, y_cv = prepare_train_test_split(
         X_scaled, y, test_size=test_size, cv_size=cv_size
@@ -85,6 +98,9 @@ def main():
     parser.add_argument('--cv-size', type=float, default=0.1, help='CV set proportion (default: 0.1)')
     parser.add_argument('--no-pytorch-mlp', action='store_true', 
                         help='Use sklearn MLP instead of PyTorch MLP')
+    parser.add_argument('--device', type=str, default='auto', 
+                        choices=['auto', 'cpu', 'cuda'],
+                        help='Device for training: auto (detect GPU), cpu, or cuda (default: auto)')
     
     args = parser.parse_args()
     
@@ -92,6 +108,7 @@ def main():
     ensemble, preprocessor, results = train_models(
         data_path=args.data,
         model_dir=args.model_dir,
+        device=args.device,
         test_size=args.test_size,
         cv_size=args.cv_size,
         use_pytorch_mlp=not args.no_pytorch_mlp
@@ -119,8 +136,14 @@ if __name__ == "__main__":
         print("python train.py --data CBC_Report.csv --model-dir models")
         print("\nOptions:")
         print("  --data           Path to training data (required)")
-        print("  --model-dir      Directory to save models (default: models)")
-        print("  --test-size      Test set proportion (default: 0.2)")
+        print("  --device         Device for training: auto, cpu, or cuda (default: auto)")
+        print("\nExamples:")
+        print("# Train with auto device detection (recommended for T4 GPU)")
+        print("python train.py --data 'CBC Report.csv' --model-dir models")
+        print("\n# Force GPU training")
+        print("python train.py --data 'CBC Report.csv' --device cuda")
+        print("\n# Force CPU training")
+        print("python train.py --data 'CBC Report.csv' --device cpu")
         print("  --cv-size        CV set proportion (default: 0.1)")
         print("  --no-pytorch-mlp Use sklearn MLP instead of PyTorch MLP")
         print("\nExample:")

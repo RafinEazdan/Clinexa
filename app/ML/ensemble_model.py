@@ -1,7 +1,8 @@
 """
-Ensemble Model for Dengue Prediction
+Ensemble Model for Dengue Prediction with GPU Support
 Combines multiple models: TabPFN, MLP, Perceptron, XGBoost, LGBM
 Uses StackingClassifier for ensemble predictions
+Supports both CPU and GPU (CUDA) for training and inference
 """
 
 import numpy as np
@@ -23,12 +24,18 @@ import json
 
 class TabPFNWrapper:
     """
-    Wrapper for TabPFN to handle safetensors saving
+    Wrapper for TabPFN with GPU support
     """
-    def __init__(self, device='cpu', N_ensemble_configurations=8):
-        self.device = device
+    def __init__(self, device='auto', N_ensemble_configurations=8):
+        # Auto-detect device if not specified
+        if device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        else:
+            self.device = device
+        
+        print(f"TabPFN using device: {self.device}")
         self.N_ensemble_configurations = N_ensemble_configurations
-        self.model = TabPFNClassifier(device=device, N_ensemble_configurations=N_ensemble_configurations)
+        self.model = TabPFNClassifier(device=self.device, N_ensemble_configurations=N_ensemble_configurations)
         self.is_fitted = False
     
     def fit(self, X, y):
@@ -52,31 +59,44 @@ class TabPFNWrapper:
         }
         with open(os.path.join(directory, 'tabpfn_config.json'), 'w') as f:
             json.dump(config, f)
-        # Note: TabPFN is pretrained, we just save its config
         print(f"TabPFN config saved to {directory}")
     
-    def load(self, directory):
+    def load(self, directory, device=None):
         """Load TabPFN model configuration"""
         with open(os.path.join(directory, 'tabpfn_config.json'), 'r') as f:
             config = json.load(f)
-        self.device = config['device']
+        
+        # Use specified device or saved device
+        if device is not None:
+            self.device = device
+        else:
+            self.device = config['device']
+        
         self.N_ensemble_configurations = config['N_ensemble_configurations']
         self.is_fitted = config['is_fitted']
         if self.is_fitted:
             self.model = TabPFNClassifier(device=self.device, N_ensemble_configurations=self.N_ensemble_configurations)
-        print(f"TabPFN config loaded from {directory}")
+        print(f"TabPFN config loaded on device: {self.device}")
 
 
 class PyTorchMLPWrapper(nn.Module):
     """
-    PyTorch MLP wrapper compatible with sklearn
+    PyTorch MLP wrapper with GPU support
     """
-    def __init__(self, input_size, hidden_sizes=[100, 50], output_size=1, learning_rate=0.001):
+    def __init__(self, input_size, hidden_sizes=[100, 50], output_size=1, learning_rate=0.001, device='auto'):
         super(PyTorchMLPWrapper, self).__init__()
         self.input_size = input_size
         self.hidden_sizes = hidden_sizes
         self.output_size = output_size
         self.learning_rate = learning_rate
+        
+        # Auto-detect device if not specified
+        if device == 'auto':
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = torch.device(device)
+        
+        print(f"PyTorch MLP using device: {self.device}")
         
         # Build network
         layers = []
@@ -89,6 +109,7 @@ class PyTorchMLPWrapper(nn.Module):
         layers.append(nn.Linear(prev_size, output_size))
         
         self.network = nn.Sequential(*layers)
+        self.to(self.device)  # Move model to device
         self.criterion = nn.BCEWithLogitsLoss()
         self.optimizer = None
         self.is_fitted = False
@@ -100,8 +121,8 @@ class PyTorchMLPWrapper(nn.Module):
         """Fit the model"""
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         
-        X_tensor = torch.FloatTensor(X)
-        y_tensor = torch.FloatTensor(y.values if hasattr(y, 'values') else y).unsqueeze(1)
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        y_tensor = torch.FloatTensor(y.values if hasattr(y, 'values') else y).unsqueeze(1).to(self.device)
         
         dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -127,26 +148,26 @@ class PyTorchMLPWrapper(nn.Module):
         """Predict class labels"""
         self.eval()
         with torch.no_grad():
-            X_tensor = torch.FloatTensor(X)
+            X_tensor = torch.FloatTensor(X).to(self.device)
             outputs = self(X_tensor)
-            predictions = (torch.sigmoid(outputs) > 0.5).float().squeeze().numpy()
+            predictions = (torch.sigmoid(outputs) > 0.5).float().squeeze().cpu().numpy()
         return predictions.astype(int)
     
     def predict_proba(self, X):
         """Predict class probabilities"""
         self.eval()
         with torch.no_grad():
-            X_tensor = torch.FloatTensor(X)
+            X_tensor = torch.FloatTensor(X).to(self.device)
             outputs = self(X_tensor)
-            probs = torch.sigmoid(outputs).squeeze().numpy()
+            probs = torch.sigmoid(outputs).squeeze().cpu().numpy()
         # Return probabilities for both classes
         return np.column_stack([1 - probs, probs])
     
     def save_safetensors(self, filepath):
         """Save model to safetensors format"""
         state_dict = self.state_dict()
-        # Convert all tensors to contiguous format
-        safe_state_dict = {k: v.contiguous() for k, v in state_dict.items()}
+        # Convert all tensors to contiguous format and move to CPU
+        safe_state_dict = {k: v.contiguous().cpu() for k, v in state_dict.items()}
         save_file(safe_state_dict, filepath)
         
         # Save model config
@@ -155,7 +176,8 @@ class PyTorchMLPWrapper(nn.Module):
             'hidden_sizes': self.hidden_sizes,
             'output_size': self.output_size,
             'learning_rate': self.learning_rate,
-            'is_fitted': self.is_fitted
+            'is_fitted': self.is_fitted,
+            'device': str(self.device)
         }
         config_path = filepath.replace('.safetensors', '_config.json')
         with open(config_path, 'w') as f:
@@ -163,8 +185,13 @@ class PyTorchMLPWrapper(nn.Module):
         
         print(f"PyTorch MLP saved to {filepath}")
     
-    def load_safetensors(self, filepath):
-        """Load model from safetensors format"""
+    def load_safetensors(self, filepath, device='auto'):
+        """Load model from safetensors format
+        
+        Args:
+            filepath: Path to safetensors file
+            device: Device to load model on ('cpu', 'cuda', or 'auto')
+        """
         # Load config first
         config_path = filepath.replace('.safetensors', '_config.json')
         with open(config_path, 'r') as f:
@@ -177,38 +204,73 @@ class PyTorchMLPWrapper(nn.Module):
         self.is_fitted = config['is_fitted']
         
         # Rebuild network with loaded config
-        self.__init__(self.input_size, self.hidden_sizes, self.output_size, self.learning_rate)
+        self.__init__(self.input_size, self.hidden_sizes, self.output_size, self.learning_rate, device=device)
         
         # Load weights
         state_dict = load_file(filepath)
         self.load_state_dict(state_dict)
+        self.to(self.device)  # Move to target device
         
-        print(f"PyTorch MLP loaded from {filepath}")
+        print(f"PyTorch MLP loaded on device: {self.device}")
 
 
 class DengueEnsembleModel:
     """
-    Ensemble model combining multiple classifiers for Dengue prediction
+    Ensemble model with GPU support for training and inference
     """
     
-    def __init__(self, input_size=None):
+    def __init__(self, input_size=None, device='auto'):
         self.input_size = input_size
         
+        # Auto-detect device
+        if device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        else:
+            self.device = device
+        
+        print(f"\n{'='*60}")
+        print(f"Initializing Ensemble")
+        print(f"Device: {self.device}")
+        if self.device == 'cuda':
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
+            print(f"CUDA Version: {torch.version.cuda}")
+        print(f"{'='*60}\n")
+        
         # Initialize base models
-        self.tabpfn = TabPFNWrapper(device='cpu', N_ensemble_configurations=8)
+        self.tabpfn = TabPFNWrapper(device=self.device, N_ensemble_configurations=8)
         self.pytorch_mlp = None  # Will be initialized with input_size
         self.perceptron = Perceptron(random_state=42)
-        self.xgb = XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42)
-        self.lgbm = LGBMClassifier(
-            boosting_type='gbdt',
-            objective='binary',
-            metric='binary_logloss',
-            num_leaves=31,
-            learning_rate=0.05,
-            feature_fraction=0.9,
-            n_estimators=1000,
-            random_state=42
-        )
+        
+        # XGBoost with GPU support if available
+        xgb_params = {
+            'n_estimators': 100,
+            'max_depth': 6,
+            'learning_rate': 0.1,
+            'random_state': 42
+        }
+        if self.device == 'cuda' and torch.cuda.is_available():
+            xgb_params['tree_method'] = 'gpu_hist'
+            xgb_params['gpu_id'] = 0
+            print("XGBoost: Using GPU acceleration")
+        self.xgb = XGBClassifier(**xgb_params)
+        
+        # LightGBM with GPU support if available
+        lgbm_params = {
+            'boosting_type': 'gbdt',
+            'objective': 'binary',
+            'metric': 'binary_logloss',
+            'num_leaves': 31,
+            'learning_rate': 0.05,
+            'feature_fraction': 0.9,
+            'n_estimators': 1000,
+            'random_state': 42,
+            'verbose': -1
+        }
+        if self.device == 'cuda' and torch.cuda.is_available():
+            lgbm_params['device'] = 'gpu'
+            print("LightGBM: Using GPU acceleration")
+        self.lgbm = LGBMClassifier(**lgbm_params)
+        
         self.sklearn_mlp = MLPClassifier(
             hidden_layer_sizes=(100, 50),
             activation='relu',
@@ -223,7 +285,11 @@ class DengueEnsembleModel:
     def initialize_pytorch_mlp(self, input_size):
         """Initialize PyTorch MLP with given input size"""
         self.input_size = input_size
-        self.pytorch_mlp = PyTorchMLPWrapper(input_size=input_size, hidden_sizes=[100, 50])
+        self.pytorch_mlp = PyTorchMLPWrapper(
+            input_size=input_size,
+            hidden_sizes=[100, 50],
+            device=self.device
+        )
     
     def fit(self, X_train, y_train, use_pytorch_mlp=True):
         """
@@ -284,15 +350,7 @@ class DengueEnsembleModel:
         print("\nEnsemble training completed!")
     
     def predict(self, X):
-        """
-        Make predictions using all models
-        
-        Args:
-            X: Features
-            
-        Returns:
-            Dictionary with predictions from all models
-        """
+        """Make predictions using all models"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
         
@@ -319,15 +377,7 @@ class DengueEnsembleModel:
         return predictions
     
     def predict_proba(self, X):
-        """
-        Predict probabilities using all models
-        
-        Args:
-            X: Features
-            
-        Returns:
-            Dictionary with probability predictions from all models
-        """
+        """Predict probabilities using all models"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
         
@@ -346,16 +396,7 @@ class DengueEnsembleModel:
         return probabilities
     
     def evaluate(self, X_test, y_test):
-        """
-        Evaluate all models
-        
-        Args:
-            X_test: Test features
-            y_test: Test labels
-            
-        Returns:
-            Dictionary with evaluation metrics
-        """
+        """Evaluate all models"""
         predictions = self.predict(X_test)
         probabilities = self.predict_proba(X_test)
         
@@ -387,12 +428,7 @@ class DengueEnsembleModel:
         return results
     
     def save(self, directory='models'):
-        """
-        Save all models
-        
-        Args:
-            directory: Directory to save models
-        """
+        """Save all models"""
         os.makedirs(directory, exist_ok=True)
         
         # Save TabPFN
@@ -413,20 +449,34 @@ class DengueEnsembleModel:
         config = {
             'input_size': self.input_size,
             'is_fitted': self.is_fitted,
-            'has_pytorch_mlp': self.pytorch_mlp is not None
+            'has_pytorch_mlp': self.pytorch_mlp is not None,
+            'device': self.device
         }
         with open(os.path.join(directory, 'ensemble_config.json'), 'w') as f:
             json.dump(config, f)
         
         print(f"\nAll models saved to {directory}")
     
-    def load(self, directory='models'):
-        """
-        Load all models
+    def load(self, directory='models', device='cpu'):
+        """Load all models
         
         Args:
             directory: Directory to load models from
+            device: Device to load models on ('cpu', 'cuda', or 'auto')
         """
+        # Auto-detect device if requested
+        if device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        else:
+            self.device = device
+        
+        print(f"\n{'='*60}")
+        print(f"Loading models")
+        print(f"Device: {self.device}")
+        if self.device == 'cuda':
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"{'='*60}\n")
+        
         # Load config
         with open(os.path.join(directory, 'ensemble_config.json'), 'r') as f:
             config = json.load(f)
@@ -434,13 +484,17 @@ class DengueEnsembleModel:
         self.input_size = config['input_size']
         self.is_fitted = config['is_fitted']
         
-        # Load TabPFN
-        self.tabpfn.load(os.path.join(directory, 'tabpfn'))
+        # Load TabPFN with specified device
+        self.tabpfn = TabPFNWrapper(device=self.device, N_ensemble_configurations=8)
+        self.tabpfn.load(os.path.join(directory, 'tabpfn'), device=self.device)
         
-        # Load PyTorch MLP
+        # Load PyTorch MLP with specified device
         if config['has_pytorch_mlp']:
-            self.pytorch_mlp = PyTorchMLPWrapper(input_size=self.input_size)
-            self.pytorch_mlp.load_safetensors(os.path.join(directory, 'pytorch_mlp.safetensors'))
+            self.pytorch_mlp = PyTorchMLPWrapper(input_size=self.input_size, device=self.device)
+            self.pytorch_mlp.load_safetensors(
+                os.path.join(directory, 'pytorch_mlp.safetensors'),
+                device=self.device
+            )
         
         # Load sklearn models
         self.xgb = joblib.load(os.path.join(directory, 'xgb_model.pkl'))
@@ -449,12 +503,17 @@ class DengueEnsembleModel:
         self.sklearn_mlp = joblib.load(os.path.join(directory, 'sklearn_mlp_model.pkl'))
         self.stacking_classifier = joblib.load(os.path.join(directory, 'stacking_classifier.pkl'))
         
-        print(f"\nAll models loaded from {directory}")
+        print(f"All models loaded successfully!")
 
 
 if __name__ == "__main__":
     # Example usage
     from preprocessing import DenguePreprocessor, prepare_train_test_split
+    
+    # Check CUDA availability
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
     
     # Load and preprocess data
     preprocessor = DenguePreprocessor()
@@ -464,8 +523,8 @@ if __name__ == "__main__":
     # Split data
     X_train, X_test, X_cv, y_train, y_test, y_cv = prepare_train_test_split(X_scaled, y)
     
-    # Initialize and train ensemble
-    ensemble = DengueEnsembleModel(input_size=X_train.shape[1])
+    # Initialize and train ensemble (use 'auto' for automatic device selection)
+    ensemble = DengueEnsembleModel(input_size=X_train.shape[1], device='auto')
     ensemble.fit(X_train, y_train, use_pytorch_mlp=True)
     
     # Evaluate

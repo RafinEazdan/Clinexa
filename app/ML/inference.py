@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import argparse
 import json
+import torch
 from preprocessing import DenguePreprocessor
 from ensemble_model import DengueEnsembleModel
 
@@ -16,16 +17,27 @@ class DenguePredictor:
     Prediction interface for Dengue classification
     """
     
-    def __init__(self, model_directory='models'):
+    def __init__(self, model_directory='models', device='cpu'):
         """
         Initialize predictor with saved models
         
         Args:
             model_directory: Directory containing saved models
+            device: Device for inference ('cpu', 'cuda', or 'auto')
         """
         self.model_directory = model_directory
+        self.device = device
+        
+        # Auto-detect device if requested
+        if device == 'auto':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        print(f"Inference device: {self.device.upper()}")
+        if self.device == 'cuda':
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
+        
         self.preprocessor = DenguePreprocessor()
-        self.ensemble = DengueEnsembleModel()
+        self.ensemble = DengueEnsembleModel(device=self.device)
         
         # Load models
         self._load_models()
@@ -192,11 +204,14 @@ def main():
     parser.add_argument('--output', type=str, help='Output file for predictions')
     parser.add_argument('--model-dir', type=str, default='models', help='Directory containing saved models')
     parser.add_argument('--single', action='store_true', help='Predict single patient from JSON input')
+    parser.add_argument('--device', type=str, default='cpu', 
+                        choices=['auto', 'cpu', 'cuda'],
+                        help='Device for inference: auto (detect GPU), cpu, or cuda (default: cpu)')
     
     args = parser.parse_args()
     
     # Initialize predictor
-    predictor = DenguePredictor(model_directory=args.model_dir)
+    predictor = DenguePredictor(model_directory=args.model_dir, device=args.device)
     
     if args.single:
         # Load single patient data from JSON
@@ -234,9 +249,14 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) == 1:
-        # Demo mode
-        print("Running in demo mode...")
-        print("\nTo use command-line interface:")
+        # Demo \n# Batch prediction (CPU - Recommended for inference)")
+        print("python inference.py --input data.csv --output predictions.csv --device cpu")
+        print("\n# Batch prediction (GPU)")
+        print("python inference.py --input data.csv --output predictions.csv --device cuda")
+        print("\n# Single prediction (CPU)")
+        print("python inference.py --input patient.json --output result.json --single --device cpu")
+        print("\n# Auto device detection")
+        print("python inference.py --input data.csv --output predictions.csv --device auto")
         print("python inference.py --input data.csv --output predictions.csv")
         print("\nFor single prediction:")
         print("python inference.py --input patient.json --output result.json --single")
